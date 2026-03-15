@@ -1,159 +1,209 @@
-import os
 import math
-from datetime import datetime
-from flask import Flask, render_template, request
+import numpy as np
 import yfinance as yf
+from flask import Flask, render_template_string, request
 
 app = Flask(__name__)
 
-# ---------- Black-Scholes helpers ----------
+RISK_TIERS = {
+    "low": 0.10,
+    "low_moderate": 0.15,
+    "moderate": 0.20,
+    "moderate_high": 0.25,
+    "high": 0.30,
+}
 
-def norm_cdf(x):
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+HTML_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Covered Call Calculator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        .risk-buttons button { margin: 4px; padding: 8px 12px; }
+        .result { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 6px; }
+        .label { font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Covered Call Calculator (Market-Aware)</h1>
+    <form method="post">
+        <label>Ticker:</label>
+        <input type="text" name="ticker" value="{{ ticker }}" required>
+        <br><br>
 
-def call_delta(S, K, T, r, sigma):
-    if T <= 0 or sigma <= 0:
-        return 0.0
-    d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
-    return norm_cdf(d1)
+        <label>Shares Owned:</label>
+        <input type="number" name="shares" value="{{ shares }}" required>
+        <br><br>
 
-def find_strike(S, T, r, sigma, target_delta):
-    best_K = S
-    best_diff = 1
-    K = S
-    while K <= S * 1.2:
-        d = call_delta(S, K, T, r, sigma)
-        diff = abs(d - target_delta)
-        if diff < best_diff:
-            best_diff = diff
-            best_K = K
-        K += 0.5
-    return round(best_K, 2)
+        <label>Cost Basis per Share:</label>
+        <input type="number" step="0.01" name="cost_basis" value="{{ cost_basis }}" required>
+        <br><br>
 
-def round_to_real_strike(theoretical, strike_list, direction="up"):
-    if not strike_list:
-        return round(theoretical, 2)
+        <label>Expiration Date (YYYY-MM-DD):</label>
+        <input type="text" name="expiration" value="{{ expiration }}" required>
+        <br><br>
 
-    if direction == "up":
-        for s in strike_list:
-            if s >= theoretical:
-                return float(s)
-        return float(strike_list[-1])
+        <label>Risk Tier (Target Delta):</label>
+        <div class="risk-buttons">
+            <button name="risk" value="low" type="submit">Low (0.10)</button>
+            <button name="risk" value="low_moderate" type="submit">Low-Moderate (0.15)</button>
+            <button name="risk" value="moderate" type="submit">Moderate (0.20)</button>
+            <button name="risk" value="moderate_high" type="submit">Moderate-High (0.25)</button>
+            <button name="risk" value="high" type="submit">High (0.30)</button>
+        </div>
+    </form>
 
-    if direction == "down":
-        for s in reversed(strike_list):
-            if s <= theoretical:
-                return float(s)
-        return float(strike_list[0])
+    {% if result %}
+    <div class="result">
+        <div><span class="label">Ticker:</span> {{ result.ticker }}</div>
+        <div><span class="label">Current Price:</span> ${{ "%.2f"|format(result.current_price) }}</div>
+        <div><span class="label">Risk Tier:</span> {{ result.risk_label }} (Target Δ {{ "%.2f"|format(result.target_delta) }})</div>
+        <hr>
+        <div><span class="label">Selected Expiration:</span> {{ result.expiration }}</div>
+        <div><span class="label">Market-Aware Strike:</span> {{ "%.2f"|format(result.strike) }}</div>
+        <div><span class="label">Option Premium (mid):</span> ${{ "%.2f"|format(result.premium) }}</div>
+        <div><span class="label">Actual Delta:</span> {{ "%.2f"|format(result.actual_delta) }}</div>
+        <hr>
+        <div><span class="label">Shares:</span> {{ result.shares }}</div>
+        <div><span class="label">Cost Basis per Share:</span> ${{ "%.2f"|format(result.cost_basis) }}</div>
+        <div><span class="label">Total Cost Basis:</span> ${{ "%.2f"|format(result.total_cost_basis) }}</div>
+        <div><span class="label">Total Premium Collected:</span> ${{ "%.2f"|format(result.total_premium) }}</div>
+        <div><span class="label">Breakeven Price:</span> ${{ "%.2f"|format(result.breakeven) }}</div>
+        <div><span class="label">Max Profit if Called Away:</span> ${{ "%.2f"|format(result.max_profit) }}</div>
+        <div><span class="label">Max Profit % on Cost Basis:</span> {{ "%.2f"|format(result.max_profit_pct) }}%</div>
+    </div>
+    {% endif %}
 
-    return float(min(strike_list, key=lambda x: abs(x - theoretical)))
+    {% if error %}
+    <div class="result" style="border-color: #c00; color: #c00;">
+        <span class="label">Error:</span> {{ error }}
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
+"""
 
-# ---------- Live data helpers ----------
-
-def get_live_price(symbol):
-    t = yf.Ticker(symbol)
+def get_current_price(ticker: str) -> float:
+    t = yf.Ticker(ticker)
     data = t.history(period="1d")
+    if data.empty:
+        raise ValueError("No price data for ticker.")
     return float(data["Close"].iloc[-1])
 
-# ---------- Routes ----------
+def get_market_aware_call(ticker: str, expiration: str, target_delta: float):
+    t = yf.Ticker(ticker)
+    chain = t.option_chain(expiration)
+    calls = chain.calls.copy()
+
+    if "delta" not in calls.columns or calls.empty:
+        raise ValueError("No delta data available for calls on this expiration.")
+
+    calls["delta_diff"] = np.abs(calls["delta"] - target_delta)
+    best_row = calls.loc[calls["delta_diff"].idxmin()]
+
+    return {
+        "strike": float(best_row["strike"]),
+        "bid": float(best_row["bid"]),
+        "ask": float(best_row["ask"]),
+        "mid": float((best_row["bid"] + best_row["ask"]) / 2),
+        "delta": float(best_row["delta"]),
+    }
+
+def compute_covered_call_metrics(shares, cost_basis, strike, premium):
+    total_cost_basis = shares * cost_basis
+    total_premium = premium * (shares / 100)  # 1 contract per 100 shares
+    breakeven = cost_basis - (premium / 100 * 100)  # effectively cost_basis - premium_per_share
+    max_profit_per_share = (strike - cost_basis) + (premium / 100 * 100)
+    max_profit = max_profit_per_share * shares
+    max_profit_pct = (max_profit / total_cost_basis) * 100 if total_cost_basis > 0 else 0.0
+
+    return {
+        "total_cost_basis": total_cost_basis,
+        "total_premium": total_premium,
+        "breakeven": breakeven,
+        "max_profit": max_profit,
+        "max_profit_pct": max_profit_pct,
+    }
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    default_ticker = "MCD"
-    t = yf.Ticker(default_ticker)
-    expirations = t.options
+    ticker = "MCD"
+    shares = 100
+    cost_basis = 280.00
+    expiration = "2025-01-17"
 
     result = None
-    last_inputs = None
+    error = None
 
     if request.method == "POST":
-        ticker = request.form["ticker"].upper()
-        expiration = request.form["expiration"]
-        risk = request.form["risk"]
+        try:
+            ticker = request.form.get("ticker", ticker).upper().strip()
+            shares = int(request.form.get("shares", shares))
+            cost_basis = float(request.form.get("cost_basis", cost_basis))
+            expiration = request.form.get("expiration", expiration).strip()
+            risk_key = request.form.get("risk", "moderate")
 
-        last_inputs = {
-            "ticker": ticker,
-            "expiration": expiration,
-            "risk": risk
-        }
+            if risk_key not in RISK_TIERS:
+                raise ValueError("Invalid risk tier selected.")
 
-        t = yf.Ticker(ticker)
-        price = get_live_price(ticker)
+            target_delta = RISK_TIERS[risk_key]
+            risk_label_map = {
+                "low": "Low",
+                "low_moderate": "Low-Moderate",
+                "moderate": "Moderate",
+                "moderate_high": "Moderate-High",
+                "high": "High",
+            }
+            risk_label = risk_label_map[risk_key]
 
-        # Compute days to expiration
-        exp_date = datetime.strptime(expiration, "%Y-%m-%d").date()
-        today = datetime.utcnow().date()
-        days = (exp_date - today).days
-        T = days / 365
-        r = 0.02
+            current_price = get_current_price(ticker)
+            call_data = get_market_aware_call(ticker, expiration, target_delta)
 
-        # Pull option chain for selected expiration
-        chain = t.option_chain(expiration)
-        calls = chain.calls
+            strike = call_data["strike"]
+            premium = call_data["mid"]
+            actual_delta = call_data["delta"]
 
-        # ATM IV for selected expiration
-        calls["diff"] = (calls["strike"] - price).abs()
-        atm = calls.sort_values("diff").iloc[0]
-        iv = float(atm["impliedVolatility"])
+            metrics = compute_covered_call_metrics(shares, cost_basis, strike, premium)
 
-        # Risk → target delta
-        target = {
-            "low": 0.10,
-            "low_moderate": 0.15,
-            "moderate": 0.20,
-            "moderate_high": 0.25,
-            "high": 0.30
-        }[risk]
+            class R:  # simple object-like container for template
+                pass
 
-        # Theoretical strike
-        theoretical_strike = find_strike(price, T, r, iv, target)
+            r = R()
+            r.ticker = ticker
+            r.current_price = current_price
+            r.risk_label = risk_label
+            r.target_delta = target_delta
+            r.expiration = expiration
+            r.strike = strike
+            r.premium = premium
+            r.actual_delta = actual_delta
+            r.shares = shares
+            r.cost_basis = cost_basis
+            r.total_cost_basis = metrics["total_cost_basis"]
+            r.total_premium = metrics["total_premium"]
+            r.breakeven = metrics["breakeven"]
+            r.max_profit = metrics["max_profit"]
+            r.max_profit_pct = metrics["max_profit_pct"]
 
-        # Real strike from chain
-        strike_list = sorted(list(calls["strike"]))
-        real_strike = round_to_real_strike(theoretical_strike, strike_list, direction="up")
+            result = r
 
-        # Get bid/ask for chosen strike
-        row = calls[calls["strike"] == real_strike]
-        if row.empty:
-            idx = (calls["strike"] - real_strike).abs().idxmin()
-            row = calls.loc[[idx]]
-        row = row.iloc[0]
+        except Exception as e:
+            error = str(e)
 
-        bid = float(row["bid"])
-        ask = float(row["ask"])
-        mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else max(bid, ask)
-
-        # Premium (rounded to 2 decimals)
-        premium = round(mid * 100, 2)
-
-        # Covered call metrics
-        breakeven = round(price - mid, 2)
-        yield_pct = premium / (price * 100) if price > 0 else 0
-        annualized = yield_pct * (365 / days) if days > 0 else 0
-
-        # Assignment probability
-        delta = call_delta(price, real_strike, T, r, iv)
-
-        result = {
-            "ticker": ticker,
-            "strike": round(real_strike, 2),
-            "premium": premium,
-            "mid_price": round(mid, 2),
-            "yield": round(yield_pct * 100, 2),
-            "annualized": round(annualized * 100, 2),
-            "breakeven": breakeven,
-            "assignment_prob": round(delta, 3),
-            "iv": round(iv, 3),
-            "risk": risk.replace("_", "-").title(),
-            "days": days,
-            "price": round(price, 2),
-            "expiration": expiration
-        }
-
-    return render_template("index.html", expirations=expirations, result=result, last_inputs=last_inputs)
-
-# ---------- Render entrypoint ----------
+    return render_template_string(
+        HTML_TEMPLATE,
+        ticker=ticker,
+        shares=shares,
+        cost_basis=cost_basis,
+        expiration=expiration,
+        result=result,
+        error=error,
+    )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
