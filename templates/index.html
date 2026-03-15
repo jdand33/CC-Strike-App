@@ -1,29 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Covered Call Strike Calculator</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        /* iPhone-friendly font stack */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
+            margin: 0;
+            padding: 20px;
+            background: #f7f7f7;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        form {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        label {
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 12px;
+            display: block;
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 6px;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #007aff;
+            color: white;
+            border: none;
+            margin-top: 18px;
+            font-weight: 600;
+        }
+
+        button:active {
+            background: #005fcc;
+        }
+
+        .card {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            margin-top: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        hr {
+            margin: 18px 0;
+            border: none;
+            border-top: 1px solid #ddd;
+        }
+
+        /* Auto dark mode */
+        @media (prefers-color-scheme: dark) {
+            body { background: #1c1c1e; color: #f2f2f7; }
+            form, .card { background: #2c2c2e; box-shadow: none; }
+            input, select { background: #3a3a3c; border: 1px solid #555; color: white; }
+            button { background: #0a84ff; }
+            hr { border-top: 1px solid #444; }
+        }
+    </style>
+</head>
+
+<body>
+
 <h2>Covered Call Strike Calculator</h2>
 
 <form method="POST">
+
     <label>Ticker:</label>
-    <input type="text" name="ticker" value="MCD" required>
+    <input type="text" name="ticker"
+           value="{{ last_inputs.ticker if last_inputs else 'MCD' }}" required>
 
     <label>Expiration:</label>
     <select name="expiration" required>
         {% for exp in expirations %}
-            <option value="{{ exp }}">{{ exp }}</option>
+            <option value="{{ exp }}"
+                {% if last_inputs and last_inputs.expiration == exp %}selected{% endif %}>
+                {{ exp }}
+            </option>
         {% endfor %}
     </select>
 
     <label>Risk Level:</label>
     <select name="risk">
-        <option value="low">Low (Delta ~0.10)</option>
-        <option value="moderate">Moderate (Delta ~0.20)</option>
-        <option value="high">High (Delta ~0.30)</option>
+        <option value="low"      {% if last_inputs and last_inputs.risk == 'low' %}selected{% endif %}>Low (Delta ~0.10)</option>
+        <option value="moderate" {% if last_inputs and last_inputs.risk == 'moderate' %}selected{% endif %}>Moderate (Delta ~0.20)</option>
+        <option value="high"     {% if last_inputs and last_inputs.risk == 'high' %}selected{% endif %}>High (Delta ~0.30)</option>
     </select>
 
     <button type="submit">Calculate</button>
 </form>
 
 {% if result %}
-<div class="card result">
+<div class="card">
     <h3>Results</h3>
+
     <p><strong>Ticker:</strong> {{ result.ticker }}</p>
     <p><strong>Stock Price:</strong> ${{ result.price }}</p>
     <p><strong>Expiration:</strong> {{ result.expiration }} ({{ result.days }} days)</p>
@@ -44,3 +134,6 @@
     <p><strong>Breakeven:</strong> ${{ result.breakeven }}</p>
 </div>
 {% endif %}
+
+</body>
+</html>
