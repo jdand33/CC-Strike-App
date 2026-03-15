@@ -1,217 +1,89 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Covered Call Calculator</title>
+    <meta charset="utf-8">
+    <title>Covered Call Picker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #0b1120;
-            color: #e5e7eb;
-            margin: 0;
-            padding: 0;
-        }
-        .wrapper {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 24px 16px 40px;
-        }
-        h1 {
-            font-size: 1.8rem;
-            margin-bottom: 0.25rem;
-        }
-        h2 {
-            font-size: 1.2rem;
-            margin-top: 2rem;
-            margin-bottom: 0.5rem;
-        }
-        p.subtitle {
-            color: #9ca3af;
-            margin-top: 0;
-            margin-bottom: 1.5rem;
-        }
-        form {
-            background: #020617;
-            border-radius: 12px;
-            padding: 16px 16px 20px;
-            border: 1px solid #1f2937;
-        }
-        .field {
-            margin-bottom: 12px;
-        }
-        label {
-            display: block;
-            font-size: 0.9rem;
-            margin-bottom: 4px;
-            color: #d1d5db;
-        }
-        input, select {
-            width: 100%;
-            padding: 8px 10px;
-            border-radius: 8px;
-            border: 1px solid #374151;
-            background: #020617;
-            color: #e5e7eb;
-            font-size: 0.95rem;
-            box-sizing: border-box;
-        }
-        input:focus, select:focus {
-            outline: none;
-            border-color: #38bdf8;
-            box-shadow: 0 0 0 1px #38bdf8;
-        }
-        button {
-            margin-top: 8px;
-            width: 100%;
-            padding: 10px 12px;
-            border-radius: 999px;
-            border: none;
-            background: linear-gradient(135deg, #22c55e, #16a34a);
-            color: #f9fafb;
-            font-weight: 600;
-            font-size: 0.95rem;
-            cursor: pointer;
-        }
-        button:hover {
-            background: linear-gradient(135deg, #16a34a, #15803d);
-        }
-        .error {
-            margin-top: 12px;
-            padding: 10px 12px;
-            border-radius: 8px;
-            background: rgba(248, 113, 113, 0.1);
-            border: 1px solid #f87171;
-            color: #fecaca;
-            font-size: 0.9rem;
-        }
-        .result-card {
-            margin-top: 20px;
-            padding: 16px 16px 14px;
-            border-radius: 12px;
-            background: #020617;
-            border: 1px solid #1f2937;
-        }
-        .result-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-size: 0.95rem;
-        }
-        .result-label {
-            color: #9ca3af;
-        }
-        .result-value {
-            font-weight: 500;
-        }
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            background: rgba(56, 189, 248, 0.1);
-            color: #7dd3fc;
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            margin-left: 6px;
-        }
-        @media (min-width: 640px) {
-            .field-row {
-                display: flex;
-                gap: 12px;
-            }
-            .field-row .field {
-                flex: 1;
-            }
-            button {
-                width: auto;
-                padding-inline: 20px;
-            }
-        }
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 1.5rem; }
+        .field { margin-bottom: 1rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+        input, select, button { width: 100%; max-width: 320px; padding: 0.4rem; font-size: 1rem; }
+        button { cursor: pointer; }
+        .error { color: #b00020; margin-bottom: 1rem; }
+        .card { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-top: 1.5rem; max-width: 480px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 0.25rem; }
+        .row span:first-child { font-weight: 600; }
     </style>
 </head>
 <body>
-<div class="wrapper">
-    <h1>Covered Call Calculator</h1>
-    <p class="subtitle">Market‑aware, real‑delta strike selection on S&amp;P 500 tickers.</p>
 
-    <form method="POST">
-        <div class="field">
-            <label for="ticker">Ticker (S&amp;P 500)</label>
-            <input
-                list="tickers"
-                name="ticker"
-                id="ticker"
-                placeholder="Enter ticker (e.g., MCD)"
-                autocomplete="off"
-                required
-            >
-            <datalist id="tickers">
-                {% for t in sp500 %}
-                    <option value="{{ t }}"></option>
-                {% endfor %}
-            </datalist>
-        </div>
+<h1>Covered Call Picker</h1>
 
-        <div class="field-row">
-            <div class="field">
-                <label for="expiration">Expiration (YYYY-MM-DD)</label>
-                <input
-                    type="text"
-                    name="expiration"
-                    id="expiration"
-                    placeholder="2026-04-17"
-                    required
-                >
-            </div>
+{% if error %}
+    <div class="error">{{ error }}</div>
+{% endif %}
 
-            <div class="field">
-                <label for="risk">
-                    Target Delta
-                    <span class="badge">Risk tier</span>
-                </label>
-                <select name="risk" id="risk" required>
-                    <option value="0.10">Conservative (~0.10)</option>
-                    <option value="0.20" selected>Moderate (~0.20)</option>
-                    <option value="0.30">Aggressive (~0.30)</option>
-                    <option value="0.40">Very Aggressive (~0.40)</option>
-                </select>
-            </div>
-        </div>
+<form method="post">
+    <div class="field">
+        <label for="ticker">Ticker</label>
+        <input list="tickers" name="ticker" id="ticker" autocomplete="off"
+               value="{{ last_inputs.ticker }}" required>
+        <datalist id="tickers">
+            {% for t in sp500 %}
+                <option value="{{ t }}"></option>
+            {% endfor %}
+        </datalist>
+    </div>
 
-        <button type="submit">Calculate Covered Call</button>
+    <div class="field">
+        <label for="expiration">Expiration</label>
+        <select name="expiration" id="expiration" required>
+            {% for exp in expirations %}
+                <option value="{{ exp }}"
+                    {% if last_inputs.expiration == exp %}selected{% endif %}>
+                    {{ exp }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
 
-        {% if error %}
-            <div class="error">
-                {{ error }}
-            </div>
-        {% endif %}
-    </form>
+    <div class="field">
+        <label for="risk">Risk Level (Target Delta)</label>
+        <select name="risk" id="risk" required>
+            {% for key, label in delta_labels.items() %}
+                <option value="{{ key }}"
+                    {% if last_inputs.risk == key %}selected{% endif %}>
+                    {{ label }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
 
-    {% if result %}
-        <h2>Selected Contract</h2>
-        <div class="result-card">
-            <div class="result-row">
-                <span class="result-label">Option Symbol</span>
-                <span class="result-value">{{ result.symbol }}</span>
-            </div>
-            <div class="result-row">
-                <span class="result-label">Strike</span>
-                <span class="result-value">{{ result.strike }}</span>
-            </div>
-            <div class="result-row">
-                <span class="result-label">Actual Delta</span>
-                <span class="result-value">{{ result.delta | round(3) }}</span>
-            </div>
-            <div class="result-row">
-                <span class="result-label">Bid / Ask</span>
-                <span class="result-value">{{ result.bid }} / {{ result.ask }}</span>
-            </div>
-            <div class="result-row">
-                <span class="result-label">Last Price</span>
-                <span class="result-value">{{ result.last }}</span>
-            </div>
-        </div>
-    {% endif %}
-</div>
+    <button type="submit">Find Call</button>
+</form>
+
+{% if result %}
+    <div class="card">
+        <h2>Selected Call</h2>
+
+        <div class="row"><span>Ticker</span><span>{{ result.ticker }}</span></div>
+        <div class="row"><span>Risk Level</span><span>{{ result.risk_label }}</span></div>
+        <div class="row"><span>Expiration</span><span>{{ result.expiration }} ({{ result.days }} days)</span></div>
+        <div class="row"><span>Spot</span><span>${{ result.spot }}</span></div>
+        <div class="row"><span>Strike</span><span>${{ result.strike }}</span></div>
+        <div class="row"><span>Bid / Ask</span><span>${{ result.bid }} / ${{ result.ask }}</span></div>
+        <div class="row"><span>Last</span><span>${{ result.last }}</span></div>
+        <div class="row"><span>IV</span><span>{{ result.iv }}%</span></div>
+        <div class="row"><span>Delta</span><span>{{ result.delta }}</span></div>
+
+        <hr>
+
+        <div class="row"><span>Premium</span><span>${{ result.premium }}</span></div>
+        <div class="row"><span>Raw Yield</span><span>{{ result.raw_yield }}%</span></div>
+        <div class="row"><span>Annualized Yield</span><span>{{ result.annualized_yield }}%</span></div>
+    </div>
+{% endif %}
+
 </body>
 </html>
