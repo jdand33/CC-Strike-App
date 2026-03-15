@@ -1,9 +1,20 @@
 {
-  "name": "Covered Call Strike Calculator",
-  "short_name": "CC Strike",
+  "name": "Covered Call Picker",
+  "short_name": "CallPicker",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1c1c1e",
-  "theme_color": "#0a84ff",
-  "icons": []
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
