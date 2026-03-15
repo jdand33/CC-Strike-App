@@ -144,7 +144,7 @@ def index():
             "breakeven": breakeven,
             "assignment_prob": round(delta, 3),
             "iv": round(iv, 3),
-            "risk": risk.capitalize(),
+            "risk": risk.replace("_", "-").title(),
             "days": days,
             "price": round(price, 2),
             "expiration": expiration
