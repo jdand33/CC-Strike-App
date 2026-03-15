@@ -143,9 +143,7 @@ def index():
 
         # Assignment probability via delta of final strike
         delta = call_delta(price, real_strike, T, r, iv)
-
-        max_profit = premium + max(0, (real_strike - price) * 100)
-
+     
         result = {
             "ticker": ticker,
             "strike": round(real_strike, 2),
@@ -154,7 +152,6 @@ def index():
             "yield": round(yield_pct * 100, 2),        # %
             "annualized": round(annualized * 100, 2),  # %
             "breakeven": round(breakeven, 2),
-            "max_profit": round(max_profit, 2),
             "assignment_prob": round(delta, 3),
             "iv": round(iv, 3),
             "risk": risk.capitalize(),
