@@ -1,5 +1,6 @@
 import os
 import math
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 import yfinance as yf
 
@@ -54,113 +55,89 @@ def get_live_price(symbol):
     data = t.history(period="1d")
     return float(data["Close"].iloc[-1])
 
-def get_atm_iv(ticker_obj, spot):
-    expirations = ticker_obj.options
-    if not expirations:
-        return None, None
-
-    nearest_exp = expirations[0]
-    chain = ticker_obj.option_chain(nearest_exp)
-    calls = chain.calls
-
-    calls["diff"] = (calls["strike"] - spot).abs()
-    atm = calls.sort_values("diff").iloc[0]
-    iv = float(atm["impliedVolatility"])
-    return iv, nearest_exp
-
-# ---------- API endpoints for frontend autofill ----------
-
-@app.route("/price")
-def price():
-    symbol = request.args.get("ticker", "MCD").upper()
-    p = get_live_price(symbol)
-    return jsonify({"price": round(p, 2)})
-
-@app.route("/iv")
-def iv():
-    symbol = request.args.get("ticker", "MCD").upper()
-    spot = get_live_price(symbol)
-    t = yf.Ticker(symbol)
-    iv_val, _ = get_atm_iv(t, spot)
-    if iv_val is None:
-        return jsonify({"iv": None})
-    return jsonify({"iv": round(iv_val, 4)})
-
-# ---------- Main covered call calculator ----------
+# ---------- Routes ----------
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    ticker = "MCD"
+    t = yf.Ticker(ticker)
+    expirations = t.options  # list of available expiration dates
+
     result = None
 
     if request.method == "POST":
         ticker = request.form["ticker"].upper()
-        days = int(request.form["days"])
+        expiration = request.form["expiration"]
         risk = request.form["risk"]
 
-        # Live price
+        t = yf.Ticker(ticker)
         price = get_live_price(ticker)
 
-        # Live IV + nearest expiration
-        t = yf.Ticker(ticker)
-        iv, nearest_exp = get_atm_iv(t, price)
-        if iv is None or nearest_exp is None:
-            return render_template("index.html", result=None, error="No options data available for this ticker.")
-
+        # Compute days to expiration
+        exp_date = datetime.strptime(expiration, "%Y-%m-%d").date()
+        today = datetime.utcnow().date()
+        days = (exp_date - today).days
         T = days / 365
         r = 0.02
 
-        # Target delta by risk
+        # Pull option chain for selected expiration
+        chain = t.option_chain(expiration)
+        calls = chain.calls
+
+        # ATM IV for selected expiration
+        calls["diff"] = (calls["strike"] - price).abs()
+        atm = calls.sort_values("diff").iloc[0]
+        iv = float(atm["impliedVolatility"])
+
+        # Risk → target delta
         target = {"low": 0.10, "moderate": 0.20, "high": 0.30}[risk]
 
-        # Theoretical strike from delta
+        # Theoretical strike
         theoretical_strike = find_strike(price, T, r, iv, target)
 
-        # Real strikes from chain
-        chain = t.option_chain(nearest_exp)
-        calls = chain.calls
+        # Real strike from chain
         strike_list = sorted(list(calls["strike"]))
         real_strike = round_to_real_strike(theoretical_strike, strike_list, direction="up")
 
-        # Find row for chosen strike
+        # Get bid/ask for chosen strike
         row = calls[calls["strike"] == real_strike]
         if row.empty:
-            # fallback: nearest by absolute difference
             idx = (calls["strike"] - real_strike).abs().idxmin()
             row = calls.loc[[idx]]
-
         row = row.iloc[0]
 
         bid = float(row["bid"])
         ask = float(row["ask"])
         mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else max(bid, ask)
 
-        # 1 contract = 100 shares
+        # Premium (1 contract = 100 shares)
         premium = mid * 100
 
+        # Covered call metrics
         breakeven = price - mid
         yield_pct = premium / (price * 100) if price > 0 else 0
         annualized = yield_pct * (365 / days) if days > 0 else 0
 
-        # Assignment probability via delta of final strike
+        # Assignment probability
         delta = call_delta(price, real_strike, T, r, iv)
-     
+
         result = {
             "ticker": ticker,
             "strike": round(real_strike, 2),
             "premium": round(premium, 2),
             "mid_price": round(mid, 2),
-            "yield": round(yield_pct * 100, 2),        # %
-            "annualized": round(annualized * 100, 2),  # %
+            "yield": round(yield_pct * 100, 2),
+            "annualized": round(annualized * 100, 2),
             "breakeven": round(breakeven, 2),
             "assignment_prob": round(delta, 3),
             "iv": round(iv, 3),
             "risk": risk.capitalize(),
             "days": days,
             "price": round(price, 2),
-            "expiration": nearest_exp
+            "expiration": expiration
         }
 
-    return render_template("index.html", result=result)
+    return render_template("index.html", expirations=expirations, result=result)
 
 # ---------- Render entrypoint ----------
 
