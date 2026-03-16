@@ -150,11 +150,30 @@
         <!-- Risk Level -->
         <label for="risk">Risk Level:</label>
         <select name="risk" id="risk">
-            <option value="very_safe" {% if request.form.risk == 'very_safe' %}selected{% endif %}>Very Safe</option>
-            <option value="safe" {% if request.form.risk == 'safe' %}selected{% endif %}>Safe</option>
-            <option value="moderate" {% if request.form.risk == 'moderate' %}selected{% endif %}>Moderate</option>
-            <option value="aggressive" {% if request.form.risk == 'aggressive' %}selected{% endif %}>Aggressive</option>
-            <option value="very_aggressive" {% if request.form.risk == 'very_aggressive' %}selected{% endif %}>Very Aggressive</option>
+            <option value="very_safe"
+                {% if request.form.risk == 'very_safe' %}selected{% endif %}>
+                Very Safe (Δ ≈ 0.10)
+            </option>
+        
+            <option value="safe"
+                {% if request.form.risk == 'safe' %}selected{% endif %}>
+                Safe (Δ ≈ 0.15)
+            </option>
+        
+            <option value="moderate"
+                {% if request.form.risk == 'moderate' %}selected{% endif %}>
+                Moderate (Δ ≈ 0.20)
+            </option>
+        
+            <option value="aggressive"
+                {% if request.form.risk == 'aggressive' %}selected{% endif %}>
+                Aggressive (Δ ≈ 0.25)
+            </option>
+        
+            <option value="very_aggressive"
+                {% if request.form.risk == 'very_aggressive' %}selected{% endif %}>
+                Very Aggressive (Δ ≈ 0.30)
+            </option>
         </select>
 
         <!-- Calculate -->
