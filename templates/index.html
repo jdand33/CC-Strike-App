@@ -25,7 +25,7 @@
         <input name="ticker" placeholder="e.g., AAPL, TSLA, SPY" required>
 
         <label>Expiration</label>
-        <select name="expiration" required>
+        <select name="expiration">
             {% for exp in expirations %}
                 <option value="{{ exp }}">{{ exp }}</option>
             {% endfor %}
