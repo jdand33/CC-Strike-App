@@ -3,6 +3,7 @@ import yfinance as yf
 import requests
 import os
 from datetime import datetime
+import math
 
 app = Flask(__name__)
 
@@ -113,16 +114,11 @@ def select_by_delta(options, target_delta):
 # POLYGON: BUILD OCC SYMBOL
 # ---------------------------------------------------------
 def build_polygon_symbol(ticker, expiration, strike, option_type="call"):
-    # expiration: YYYY-MM-DD
     year, month, day = expiration.split("-")
     yy = year[2:]
-
     cp = "C" if option_type.lower() == "call" else "P"
-
-    # OCC format: strike * 1000, padded to 8 digits
     strike_int = int(round(float(strike) * 1000))
     strike_str = f"{strike_int:08d}"
-
     return f"{ticker.upper()}{yy}{month}{day}{cp}{strike_str}"
 
 # ---------------------------------------------------------
@@ -144,6 +140,34 @@ def get_polygon_iv(option_symbol: str):
         return None
 
 # ---------------------------------------------------------
+# BLACK-SCHOLES IV FALLBACK
+# ---------------------------------------------------------
+def black_scholes_call_price(S, K, T, r, sigma):
+    d1 = (math.log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    N = lambda x: 0.5 * (1 + math.erf(x / math.sqrt(2)))
+    return S * N(d1) - K * math.exp(-r * T) * N(d2)
+
+def estimate_iv_black_scholes(S, K, T, r, market_price):
+    if market_price <= 0:
+        return None
+
+    sigma = 0.3
+    for _ in range(40):
+        price = black_scholes_call_price(S, K, T, r, sigma)
+        vega = (S * math.sqrt(T) * (1 / math.sqrt(2 * math.pi)) *
+                math.exp(-0.5 * ((math.log(S / K) + (r + sigma * sigma / 2) * T) /
+                (sigma * math.sqrt(T))) ** 2))
+
+        if vega < 1e-6:
+            break
+
+        sigma -= (price - market_price) / vega
+        sigma = max(0.0001, min(sigma, 5))
+
+    return sigma
+
+# ---------------------------------------------------------
 # MAIN ROUTE
 # ---------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
@@ -159,43 +183,30 @@ def index():
         risk_key = request.form.get("risk", "").strip()
 
         if not ticker:
-            return render_template("index.html",
-                                   error="Please enter a ticker.",
-                                   expirations=[])
+            return render_template("index.html", error="Please enter a ticker.", expirations=[])
 
         if not validate_ticker(ticker):
-            return render_template("index.html",
-                                   error=f"'{ticker}' is not a valid ticker.",
-                                   expirations=[])
+            return render_template("index.html", error=f"'{ticker}' is not a valid ticker.", expirations=[])
 
         expirations = get_tradier_expirations(ticker)
         if not expirations:
-            return render_template("index.html",
-                                   error="No expirations available.",
-                                   expirations=[])
+            return render_template("index.html", error="No expirations available.", expirations=[])
 
         if action == "load":
-            return render_template("index.html",
-                                   expirations=expirations)
+            return render_template("index.html", expirations=expirations)
 
         if expiration not in expirations:
-            return render_template("index.html",
-                                   error="Invalid expiration.",
-                                   expirations=expirations)
+            return render_template("index.html", error="Invalid expiration.", expirations=expirations)
 
         target_delta = RISK_TO_DELTA[risk_key]
 
         chain = get_tradier_chain(ticker, expiration)
         if chain is None:
-            return render_template("index.html",
-                                   error="Unable to pull option data.",
-                                   expirations=expirations)
+            return render_template("index.html", error="Unable to pull option data.", expirations=expirations)
 
         best = select_by_delta(chain, target_delta)
         if best is None:
-            return render_template("index.html",
-                                   error="No liquid strikes found for this risk level.",
-                                   expirations=expirations)
+            return render_template("index.html", error="No liquid strikes found for this risk level.", expirations=expirations)
 
         t = yf.Ticker(ticker)
         fi = t.fast_info
@@ -204,6 +215,7 @@ def index():
         exp_date = datetime.strptime(expiration, "%Y-%m-%d")
         today = datetime.utcnow()
         days_out = (exp_date - today).days
+        T = max(days_out / 365, 0.0001)
 
         bid = best.get("bid", 0)
         ask = best.get("ask", 0)
@@ -217,7 +229,21 @@ def index():
         poly_symbol = build_polygon_symbol(ticker, expiration, best["strike"])
         poly_iv = get_polygon_iv(poly_symbol)
 
-        iv_value = poly_iv if poly_iv is not None else best.get("greeks", {}).get("iv")
+        # Tradier IV
+        tradier_iv = best.get("greeks", {}).get("iv")
+
+        # Black-Scholes fallback
+        bs_iv = None
+        if poly_iv is None and tradier_iv is None:
+            bs_iv = estimate_iv_black_scholes(
+                S=stock_price,
+                K=best["strike"],
+                T=T,
+                r=0.00,
+                market_price=mid
+            )
+
+        iv_value = poly_iv or tradier_iv or bs_iv
 
         result = {
             "ticker": ticker,
@@ -232,10 +258,7 @@ def index():
             "premium": premium
         }
 
-    return render_template("index.html",
-                           result=result,
-                           error=error,
-                           expirations=expirations)
+    return render_template("index.html", result=result, error=error, expirations=expirations)
 
 # ---------------------------------------------------------
 # RUN APP
