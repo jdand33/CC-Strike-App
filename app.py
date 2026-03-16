@@ -10,8 +10,8 @@ app = Flask(__name__)
 # ---------------------------------------------------------
 # API KEYS
 # ---------------------------------------------------------
-TRADIER_KEY = os.getenv("TRADIER_KEY") or "REPLACE_WITH_YOUR_TRADIER_KEY"
-POLYGON_KEY = os.getenv("POLYGON_KEY") or "REPLACE_WITH_YOUR_POLYGON_KEY"
+TRADIER_KEY = os.getenv("TRADIER_KEY") or "Adg17LaQudeoRTdAgQxXUwB3nfWA"
+POLYGON_KEY = os.getenv("POLYGON_KEY") or "nVuq_7o7g8SeySvC1zYPZY6drDdhbEv4"
 
 TRADIER_EXP_URL = "https://api.tradier.com/v1/markets/options/expirations"
 TRADIER_CHAIN_URL = "https://api.tradier.com/v1/markets/options/chains"
