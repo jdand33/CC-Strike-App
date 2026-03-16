@@ -12,9 +12,12 @@ app = Flask(__name__)
 TRADIER_KEY = os.getenv("TRADIER_KEY")
 
 # Choose one:
-TRADIER_URL = "https://sandbox.tradier.com/v1/markets/options/chains"
-# For live data (real-time):
-# TRADIER_URL = "https://api.tradier.com/v1/markets/options/chains"
+TRADIER_CHAIN_URL = "https://sandbox.tradier.com/v1/markets/options/chains"
+TRADIER_EXP_URL = "https://sandbox.tradier.com/v1/markets/options/expirations"
+
+# For live data:
+# TRADIER_CHAIN_URL = "https://api.tradier.com/v1/markets/options/chains"
+# TRADIER_EXP_URL = "https://api.tradier.com/v1/markets/options/expirations"
 
 HEADERS = {
     "Authorization": f"Bearer {TRADIER_KEY}",
@@ -39,31 +42,34 @@ def validate_ticker(ticker: str) -> bool:
         info = t.fast_info
 
         if not info:
-            print("DEBUG: fast_info empty")
             return False
 
         if not getattr(info, "last_price", None):
-            print("DEBUG: last_price missing")
             return False
 
         return True
 
-    except Exception as e:
-        print("VALIDATE_TICKER EXCEPTION:", e)
+    except Exception:
         return False
 
 
 # ---------------------------------------------------------
-# GET EXPIRATIONS (YFINANCE)
+# GET EXPIRATIONS FROM TRADIER (IMPORTANT FIX)
 # ---------------------------------------------------------
-def get_expirations(ticker: str):
+def get_tradier_expirations(ticker: str):
     try:
-        t = yf.Ticker(ticker)
-        expirations = t.options
-        print("DEBUG: Expirations:", expirations)
-        return expirations
+        params = {"symbol": ticker}
+        r = requests.get(TRADIER_EXP_URL, headers=HEADERS, params=params)
+
+        if r.status_code != 200:
+            print("TRADIER EXP ERROR:", r.text)
+            return []
+
+        data = r.json()
+        return data.get("expirations", {}).get("date", [])
+
     except Exception as e:
-        print("GET_EXPIRATIONS EXCEPTION:", e)
+        print("EXPIRATION EXCEPTION:", e)
         return []
 
 
@@ -77,13 +83,11 @@ def get_tradier_chain(ticker: str, expiration: str):
         "greeks": "true"
     }
 
-    print("DEBUG: Tradier request:", params)
-
     try:
-        r = requests.get(TRADIER_URL, headers=HEADERS, params=params)
+        r = requests.get(TRADIER_CHAIN_URL, headers=HEADERS, params=params)
 
         if r.status_code != 200:
-            print("TRADIER ERROR:", r.text)
+            print("TRADIER CHAIN ERROR:", r.text)
             return None
 
         data = r.json()
@@ -95,12 +99,12 @@ def get_tradier_chain(ticker: str, expiration: str):
         return data["options"]["option"]
 
     except Exception as e:
-        print("TRADIER REQUEST EXCEPTION:", e)
+        print("CHAIN EXCEPTION:", e)
         return None
 
 
 # ---------------------------------------------------------
-# SELECT STRIKE BY DELTA
+# SELECT STRIKE BY DELTA (WITH LIQUIDITY FILTER)
 # ---------------------------------------------------------
 def select_by_delta(options, target_delta):
     best = None
@@ -110,6 +114,13 @@ def select_by_delta(options, target_delta):
         if opt["option_type"] != "call":
             continue
 
+        # Skip illiquid strikes
+        bid = opt.get("bid", 0)
+        ask = opt.get("ask", 0)
+        if bid == 0 and ask == 0:
+            continue
+
+        # Skip missing greeks
         delta = opt.get("greeks", {}).get("delta")
         if delta is None:
             continue
@@ -137,13 +148,6 @@ def index():
         expiration = request.form.get("expiration", "").strip()
         risk_key = request.form.get("risk", "").strip()
 
-        print("\n=== FORM DEBUG ===")
-        print("Action:", action)
-        print("Ticker:", ticker)
-        print("Expiration:", expiration)
-        print("Risk:", risk_key)
-        print("===================\n")
-
         # Validate ticker
         if not ticker:
             return render_template("index.html",
@@ -155,8 +159,8 @@ def index():
                                    error=f"'{ticker}' is not a valid ticker.",
                                    expirations=[])
 
-        # Load expirations
-        expirations = get_expirations(ticker)
+        # Load Tradier expirations
+        expirations = get_tradier_expirations(ticker)
         if not expirations:
             return render_template("index.html",
                                    error="No expirations available.",
@@ -186,7 +190,7 @@ def index():
         best = select_by_delta(chain, target_delta)
         if best is None:
             return render_template("index.html",
-                                   error="No valid delta data.",
+                                   error="No liquid strikes found for this risk level.",
                                    expirations=expirations)
 
         # ---------------------------------------------------------
