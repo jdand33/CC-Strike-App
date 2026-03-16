@@ -165,7 +165,7 @@ def index():
 
         # Load expirations
         raw_exps = get_tradier_expirations(ticker)
-        print("RAW EXPIRATIONS:", raw_exps)
+     
         # Earnings week detection
         try:
             t = yf.Ticker(ticker)
