@@ -115,10 +115,11 @@
         <!-- Ticker -->
         <label for="ticker">Ticker:</label>
         <input type="text" name="ticker" id="ticker"
-               value="{{ request.form.ticker }}"
-               style="text-transform: uppercase;"
-               oninput="this.value = this.value.toUpperCase();"
-               required>
+           value="{{ request.form.ticker }}"
+           style="text-transform: uppercase;"
+           oninput="this.value = this.value.toUpperCase();"
+           required>
+
 
         <!-- Load Expirations -->
         <button type="submit" name="action" value="load">Load Expirations</button>
