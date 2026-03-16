@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request
 import yfinance as yf
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -117,7 +118,8 @@ def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
                     "delta": float(best["delta"]),
                     "bid": float(best["bid"]),
                     "ask": float(best["ask"]),
-                    "last": float(best["lastPrice"])
+                    "last": float(best["lastPrice"]),
+                    "iv": float(best["impliedVolatility"]) if "impliedVolatility" in best else None
                 }
 
             print("DEBUG: Delta exists but all NaN — falling back to strike logic")
@@ -128,12 +130,10 @@ def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
         print("DEBUG: Using strike-based fallback")
 
         if last_price is None:
-            # No price → pick middle strike
             mid_idx = len(calls) // 2
             best = calls.iloc[mid_idx]
             print("DEBUG: No last_price, picked middle strike:", best["contractSymbol"])
         else:
-            # Prefer nearest OTM strike
             calls["moneyness"] = calls["strike"] - last_price
             otm = calls[calls["moneyness"] >= 0]
 
@@ -141,7 +141,6 @@ def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
                 best = otm.loc[otm["moneyness"].idxmin()]
                 print("DEBUG: Picked nearest OTM strike:", best["contractSymbol"])
             else:
-                # All ITM → pick closest strike
                 calls["abs_diff_strike"] = (calls["strike"] - last_price).abs()
                 best = calls.loc[calls["abs_diff_strike"].idxmin()]
                 print("DEBUG: All ITM, picked closest strike:", best["contractSymbol"])
@@ -151,10 +150,11 @@ def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
         return {
             "symbol": best["contractSymbol"],
             "strike": float(best["strike"]),
-            "delta": None,  # no delta available
+            "delta": None,
             "bid": float(best["bid"]),
             "ask": float(best["ask"]),
-            "last": float(best["lastPrice"])
+            "last": float(best["lastPrice"]),
+            "iv": float(best["impliedVolatility"]) if "impliedVolatility" in best else None
         }
 
     except Exception as e:
@@ -226,11 +226,41 @@ def index():
 
         target_delta = RISK_TO_DELTA[risk_key]
 
+        # Get option result
         result = get_closest_delta_strike(ticker, expiration, target_delta)
         if result is None:
             return render_template("index.html",
                                    error="Unable to pull option data.",
                                    expirations=expirations)
+
+        # -----------------------------
+        # ADD ENHANCED OUTPUT FIELDS
+        # -----------------------------
+
+        # Stock price
+        t = yf.Ticker(ticker)
+        fi = t.fast_info
+        result["stock_price"] = getattr(fi, "last_price", None)
+
+        # Days until expiration
+        exp_date = datetime.strptime(expiration, "%Y-%m-%d")
+        today = datetime.utcnow()
+        result["days_out"] = (exp_date - today).days
+
+        # Risk label
+        result["risk_label"] = risk_key.replace("_", " ").title()
+
+        # Mid price
+        result["mid"] = round((result["bid"] + result["ask"]) / 2, 2)
+
+        # Premium (mid × 100)
+        result["premium"] = round(result["mid"] * 100, 2)
+
+        # Assignment probability
+        if result["delta"] is not None:
+            result["assign_prob"] = round(abs(result["delta"]) * 100, 1)
+        else:
+            result["assign_prob"] = None
 
     return render_template("index.html",
                            result=result,
