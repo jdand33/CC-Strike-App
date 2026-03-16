@@ -78,13 +78,15 @@
 
         <!-- Ticker -->
         <label for="ticker">Ticker:</label>
-        <input type="text" name="ticker" id="ticker" required>
+        <input type="text" name="ticker" id="ticker"
+               value="{{ request.form.ticker }}"
+               required>
 
         <!-- Load Expirations -->
         <button type="submit" name="action" value="load">Load Expirations</button>
 
         <!-- Expiration Dropdown -->
-        {% if expirations %}
+        {% if expirations and expirations|length > 0 %}
             <label for="expiration">Expiration:</label>
             <select name="expiration" id="expiration">
                 {% for exp in expirations %}
