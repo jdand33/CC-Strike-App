@@ -3,6 +3,15 @@ import yfinance as yf
 
 app = Flask(__name__)
 
+# Risk categories mapped to approximate deltas
+RISK_TO_DELTA = {
+    "very_safe": 0.10,
+    "safe": 0.15,
+    "moderate": 0.20,
+    "aggressive": 0.25,
+    "very_aggressive": 0.30
+}
+
 def validate_ticker(ticker: str) -> bool:
     try:
         t = yf.Ticker(ticker)
@@ -14,6 +23,12 @@ def validate_ticker(ticker: str) -> bool:
         return True
     except:
         return False
+
+def get_expirations(ticker: str):
+    try:
+        return yf.Ticker(ticker).options
+    except:
+        return []
 
 def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
     try:
@@ -37,29 +52,36 @@ def get_closest_delta_strike(ticker: str, expiration: str, target_delta: float):
 def index():
     result = None
     error = None
+    expirations = []
 
     if request.method == "POST":
         ticker = request.form.get("ticker", "").upper().strip()
         expiration = request.form.get("expiration", "").strip()
-        risk_raw = request.form.get("risk", "").strip()
+        risk_key = request.form.get("risk", "").strip()
 
-        if not ticker or not expiration or not risk_raw:
-            error = "All fields are required."
-            return render_template("index.html", error=error)
-
-        try:
-            target_delta = float(risk_raw)
-        except:
-            return render_template("index.html", error="Invalid delta value.")
+        if not ticker:
+            return render_template("index.html", error="Ticker required.", expirations=[])
 
         if not validate_ticker(ticker):
-            return render_template("index.html", error=f"'{ticker}' is not a valid ticker with options.")
+            return render_template("index.html", error=f"'{ticker}' is not a valid ticker with options.", expirations=[])
+
+        expirations = get_expirations(ticker)
+        if not expirations:
+            return render_template("index.html", error="No expirations available.", expirations=[])
+
+        if expiration not in expirations:
+            return render_template("index.html", error=f"{expiration} is not a valid expiration.", expirations=expirations)
+
+        if risk_key not in RISK_TO_DELTA:
+            return render_template("index.html", error="Invalid risk level.", expirations=expirations)
+
+        target_delta = RISK_TO_DELTA[risk_key]
 
         result = get_closest_delta_strike(ticker, expiration, target_delta)
         if result is None:
-            return render_template("index.html", error="Unable to pull option data for that expiration.")
+            return render_template("index.html", error="Unable to pull option data.", expirations=expirations)
 
-    return render_template("index.html", result=result, error=error)
+    return render_template("index.html", result=result, error=error, expirations=expirations)
 
 if __name__ == "__main__":
     app.run(debug=True)
