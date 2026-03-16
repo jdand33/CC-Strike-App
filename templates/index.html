@@ -2,69 +2,105 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Covered Call Calculator</title>
 
     <style>
+        /* ---------- Base Light Mode ---------- */
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
             padding: 20px;
-            background: #f5f5f5;
+            background: #f2f2f7;
+            color: #1c1c1e;
         }
 
         .container {
             max-width: 480px;
             margin: auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            background: #ffffff;
+            padding: 22px;
+            border-radius: 14px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
         }
 
         label {
-            font-weight: bold;
+            font-weight: 600;
             display: block;
-            margin-top: 12px;
+            margin-top: 14px;
+            font-size: 15px;
         }
 
         input, select, button {
             width: 100%;
-            padding: 10px;
+            padding: 14px;
             margin-top: 6px;
-            border-radius: 6px;
+            border-radius: 10px;
             border: 1px solid #ccc;
-            font-size: 16px;
+            font-size: 17px;
         }
 
         button {
-            background: #007bff;
+            background: #007aff;
             color: white;
             border: none;
-            margin-top: 16px;
-            cursor: pointer;
+            margin-top: 20px;
+            font-weight: 600;
         }
 
         button:hover {
-            background: #0056b3;
+            background: #0063cc;
         }
 
         .error {
-            color: red;
+            color: #ff3b30;
             margin-top: 15px;
             font-weight: bold;
         }
 
         .result-box {
-            margin-top: 20px;
-            background: #fafafa;
-            padding: 15px;
-            border-radius: 8px;
+            margin-top: 24px;
+            background: #f9f9fb;
+            padding: 18px;
+            border-radius: 12px;
             border: 1px solid #ddd;
         }
 
         .result-box p {
-            margin: 6px 0;
+            margin: 8px 0;
+            font-size: 16px;
+        }
+
+        /* ---------- Dark Mode ---------- */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1c1c1e;
+                color: #f2f2f7;
+            }
+
+            .container {
+                background: #2c2c2e;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+            }
+
+            input, select {
+                background: #3a3a3c;
+                border: 1px solid #555;
+                color: #f2f2f7;
+            }
+
+            button {
+                background: #0a84ff;
+            }
+
+            .result-box {
+                background: #1e1e1f;
+                border-color: #444;
+            }
+
+            label {
+                color: #d1d1d6;
+            }
         }
     </style>
 </head>
@@ -72,7 +108,7 @@
 <body>
 <div class="container">
 
-    <h2>Covered Call Calculator</h2>
+    <h2 style="margin-top:0; font-size:22px; font-weight:700;">Covered Call Calculator</h2>
 
     <form method="POST">
 
@@ -80,17 +116,17 @@
         <label for="ticker">Ticker:</label>
         <input type="text" name="ticker" id="ticker"
                value="{{ request.form.ticker }}"
+               style="text-transform: uppercase;"
+               oninput="this.value = this.value.toUpperCase();"
                required>
 
         <!-- Load Expirations -->
         <button type="submit" name="action" value="load">Load Expirations</button>
 
-        <!-- Expiration Dropdown (always visible, disabled until loaded) -->
+        <!-- Expiration Dropdown -->
         <label for="expiration">Expiration:</label>
         <select name="expiration" id="expiration"
-                style="width:100%; padding:10px; margin-top:6px;"
                 {% if not expirations %}disabled{% endif %}>
-
             {% if not expirations %}
                 <option>Load expirations first...</option>
             {% else %}
@@ -113,30 +149,11 @@
         <!-- Risk Level -->
         <label for="risk">Risk Level:</label>
         <select name="risk" id="risk">
-            <option value="very_safe"
-                {% if request.form.risk == 'very_safe' %}selected{% endif %}>
-                Very Safe
-            </option>
-
-            <option value="safe"
-                {% if request.form.risk == 'safe' %}selected{% endif %}>
-                Safe
-            </option>
-
-            <option value="moderate"
-                {% if request.form.risk == 'moderate' %}selected{% endif %}>
-                Moderate
-            </option>
-
-            <option value="aggressive"
-                {% if request.form.risk == 'aggressive' %}selected{% endif %}>
-                Aggressive
-            </option>
-
-            <option value="very_aggressive"
-                {% if request.form.risk == 'very_aggressive' %}selected{% endif %}>
-                Very Aggressive
-            </option>
+            <option value="very_safe" {% if request.form.risk == 'very_safe' %}selected{% endif %}>Very Safe</option>
+            <option value="safe" {% if request.form.risk == 'safe' %}selected{% endif %}>Safe</option>
+            <option value="moderate" {% if request.form.risk == 'moderate' %}selected{% endif %}>Moderate</option>
+            <option value="aggressive" {% if request.form.risk == 'aggressive' %}selected{% endif %}>Aggressive</option>
+            <option value="very_aggressive" {% if request.form.risk == 'very_aggressive' %}selected{% endif %}>Very Aggressive</option>
         </select>
 
         <!-- Calculate -->
