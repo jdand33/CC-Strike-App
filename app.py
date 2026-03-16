@@ -9,10 +9,15 @@ app = Flask(__name__)
 # ---------------------------------------------------------
 # TRADIER CONFIG (LIVE MODE)
 # ---------------------------------------------------------
-TRADIER_KEY = os.getenv("TRADIER_KEY")
+TRADIER_KEY = os.getenv("TRADIER_KEY") or "Adg17LaQudeoRTdAgQxXUwB3nfWA"
 
-# DEBUG: Show what key the app is actually receiving
-print("DEBUG TRADIER KEY:", TRADIER_KEY)
+TRADIER_EXP_URL = "https://api.tradier.com/v1/markets/options/expirations"
+TRADIER_CHAIN_URL = "https://api.tradier.com/v1/markets/options/chains"
+
+HEADERS = {
+    "Authorization": f"Bearer {TRADIER_KEY}",
+    "Accept": "application/json"
+}
 
 # Risk tiers mapped to target deltas
 RISK_TO_DELTA = {
@@ -51,18 +56,13 @@ def get_tradier_expirations(ticker: str):
         params = {"symbol": ticker}
         r = requests.get(TRADIER_EXP_URL, headers=HEADERS, params=params)
 
-        # Debug print
-        print("DEBUG RAW EXP RESPONSE:", r.text)
-
         if r.status_code != 200:
-            print("TRADIER EXP ERROR:", r.text)
             return []
 
         data = r.json()
         return data.get("expirations", {}).get("date", [])
 
-    except Exception as e:
-        print("EXPIRATION EXCEPTION:", e)
+    except Exception:
         return []
 
 
@@ -80,19 +80,16 @@ def get_tradier_chain(ticker: str, expiration: str):
         r = requests.get(TRADIER_CHAIN_URL, headers=HEADERS, params=params)
 
         if r.status_code != 200:
-            print("TRADIER CHAIN ERROR:", r.text)
             return None
 
         data = r.json()
 
         if "options" not in data or data["options"] is None:
-            print("TRADIER: No options returned")
             return None
 
         return data["options"]["option"]
 
-    except Exception as e:
-        print("CHAIN EXCEPTION:", e)
+    except Exception:
         return None
 
 
