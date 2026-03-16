@@ -85,10 +85,15 @@
         <!-- Load Expirations -->
         <button type="submit" name="action" value="load">Load Expirations</button>
 
-        <!-- Expiration Dropdown -->
-        {% if expirations and expirations|length > 0 %}
-            <label for="expiration">Expiration:</label>
-            <select name="expiration" id="expiration">
+        <!-- Expiration Dropdown (always visible, disabled until loaded) -->
+        <label for="expiration">Expiration:</label>
+        <select name="expiration" id="expiration"
+                style="width:100%; padding:10px; margin-top:6px;"
+                {% if not expirations %}disabled{% endif %}>
+
+            {% if not expirations %}
+                <option>Load expirations first...</option>
+            {% else %}
                 {% for exp in expirations %}
                     <option value="{{ exp.date }}"
                         {% if exp.earnings_week %}
@@ -99,8 +104,8 @@
                         {% if exp.earnings_week %}(Earnings Week){% endif %}
                     </option>
                 {% endfor %}
-            </select>
-        {% endif %}
+            {% endif %}
+        </select>
 
         <!-- Risk Level -->
         <label for="risk">Risk Level:</label>
