@@ -123,23 +123,70 @@
 
     {% if result %}
         <div class="result">
-            <div class="row"><span>Option:</span><span>{{ result.symbol }}</span></div>
-            <div class="row"><span>Strike:</span><span>{{ result.strike }}</span></div>
 
-            <!-- SAFE DELTA DISPLAY -->
             <div class="row">
-                <span>Delta:</span>
+                <span>Ticker:</span>
+                <span>{{ request.form.get('ticker') }}</span>
+            </div>
+
+            <div class="row">
+                <span>Stock Price:</span>
                 <span>
-                    {% if result.delta is not none %}
-                        {{ result.delta | round(3) }}
+                    {% if result.stock_price %}
+                        {{ result.stock_price }}
                     {% else %}
                         N/A
                     {% endif %}
                 </span>
             </div>
 
-            <div class="row"><span>Bid / Ask:</span><span>{{ result.bid }} / {{ result.ask }}</span></div>
-            <div class="row"><span>Last Price:</span><span>{{ result.last }}</span></div>
+            <div class="row">
+                <span>Expiration:</span>
+                <span>{{ request.form.get('expiration') }} ({{ result.days_out }} days)</span>
+            </div>
+
+            <div class="row">
+                <span>Risk Level:</span>
+                <span>{{ result.risk_label }}</span>
+            </div>
+
+            <div class="row">
+                <span>Strike Price:</span>
+                <span>{{ result.strike }}</span>
+            </div>
+
+            <div class="row">
+                <span>Implied Volatility:</span>
+                <span>
+                    {% if result.iv %}
+                        {{ (result.iv * 100) | round(1) }}%
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </span>
+            </div>
+
+            <div class="row">
+                <span>Assignment Probability:</span>
+                <span>
+                    {% if result.assign_prob %}
+                        {{ result.assign_prob }}%
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </span>
+            </div>
+
+            <div class="row">
+                <span>Mid Price:</span>
+                <span>{{ result.mid }}</span>
+            </div>
+
+            <div class="row">
+                <span>Premium:</span>
+                <span>{{ result.premium }}</span>
+            </div>
+
         </div>
     {% endif %}
 </div>
