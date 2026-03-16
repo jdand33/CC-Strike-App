@@ -24,15 +24,20 @@
         <label>Ticker</label>
         <input name="ticker" placeholder="e.g., AAPL, TSLA, SPY" required>
 
-        <label>Expiration (YYYY-MM-DD)</label>
-        <input name="expiration" placeholder="2026-04-17" required>
+        <label>Expiration</label>
+        <select name="expiration" required>
+            {% for exp in expirations %}
+                <option value="{{ exp }}">{{ exp }}</option>
+            {% endfor %}
+        </select>
 
-        <label>Target Delta</label>
-        <select name="risk">
-            <option value="0.10">0.10</option>
-            <option value="0.20" selected>0.20</option>
-            <option value="0.30">0.30</option>
-            <option value="0.40">0.40</option>
+        <label>Risk Level</label>
+        <select name="risk" required>
+            <option value="very_safe">Very Safe (Δ ≈ 0.10)</option>
+            <option value="safe">Safe (Δ ≈ 0.15)</option>
+            <option value="moderate" selected>Moderate (Δ ≈ 0.20)</option>
+            <option value="aggressive">Aggressive (Δ ≈ 0.25)</option>
+            <option value="very_aggressive">Very Aggressive (Δ ≈ 0.30)</option>
         </select>
 
         <button type="submit">Calculate</button>
