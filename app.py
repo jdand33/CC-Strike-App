@@ -213,55 +213,57 @@ def index():
                                        expirations=expirations,
                                        error=error)
 
-         # -------------------------
-         # PICK BEST STRIKE
-         # -------------------------
-         target_delta = DELTA_TARGETS.get(risk, 0.20)
-        
-         best = min(
-             calls,
-             key=lambda c: abs(c.get("computed_delta") - target_delta)
-         )
-        
-         strike = best.get("strike")
-         delta = best.get("computed_delta")
-         iv = best.get("computed_iv")
-        
-         # Premium calculation using mid price
-         bid = best.get("bid") or 0
-         ask = best.get("ask") or 0
-        
-         if bid and ask:
-             mid = (bid + ask) / 2
-         elif bid:
-             mid = bid
-         elif ask:
-             mid = ask
-         else:
-             mid = 0
-        
-         premium = round(mid * 100, 2)  # premium for 1 contract
-        
-         assign_prob = round(abs(delta) * 100, 1)
-        
-         # Days out
-         exp_clean = expiration.split(":")[0]
-         d0 = datetime.now()
-         d1 = datetime.strptime(exp_clean, "%Y-%m-%d")
-         days_out = (d1 - d0).days
-        
-         result = {
-             "ticker": ticker,
-             "stock_price": round(stock_price, 2),
-             "expiration": exp_clean,
-             "days_out": days_out,
-             "risk_label": risk.replace("_", " ").title(),
-             "strike": strike,
-             "iv": iv,
-             "iv_estimated": iv is None,
-             "assign_prob": assign_prob,
-             "premium": premium,
-         }
+            # -------------------------
+            # PICK BEST STRIKE
+            # -------------------------
+            target_delta = DELTA_TARGETS.get(risk, 0.20)
+
+            best = min(
+                calls,
+                key=lambda c: abs(c.get("computed_delta") - target_delta)
+            )
+
+            strike = best.get("strike")
+            delta = best.get("computed_delta")
+            iv = best.get("computed_iv")
+
+            # -------------------------
+            # PREMIUM = MID × 100
+            # -------------------------
+            bid = best.get("bid") or 0
+            ask = best.get("ask") or 0
+
+            if bid and ask:
+                mid = (bid + ask) / 2
+            elif bid:
+                mid = bid
+            elif ask:
+                mid = ask
+            else:
+                mid = 0
+
+            premium = round(mid * 100, 2)  # premium for 1 contract
+
+            assign_prob = round(abs(delta) * 100, 1)
+
+            # Days out
+            exp_clean = expiration.split(":")[0]
+            d0 = datetime.now()
+            d1 = datetime.strptime(exp_clean, "%Y-%m-%d")
+            days_out = (d1 - d0).days
+
+            result = {
+                "ticker": ticker,
+                "stock_price": round(stock_price, 2),
+                "expiration": exp_clean,
+                "days_out": days_out,
+                "risk_label": risk.replace("_", " ").title(),
+                "strike": strike,
+                "iv": iv,
+                "iv_estimated": iv is None,
+                "assign_prob": assign_prob,
+                "premium": premium,
+            }
 
             return render_template("index.html",
                                    expirations=expirations,
