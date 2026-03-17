@@ -1,240 +1,159 @@
-import os
-import requests
-from flask import Flask, render_template, request
-from datetime import datetime
-import math
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Covered Call Calculator</title>
 
-app = Flask(__name__)
-
-# -----------------------------
-# CONFIG
-# -----------------------------
-TRADIER_TOKEN = os.getenv("TRADIER_TOKEN")
-
-TRADIER_EXP_URL = "https://api.tradier.com/v1/markets/options/expirations"
-TRADIER_CHAIN_URL = "https://api.tradier.com/v1/markets/options/chains"
-TRADIER_QUOTE_URL = "https://api.tradier.com/v1/markets/quotes"
-
-HEADERS = {
-    "Authorization": f"Bearer {TRADIER_TOKEN}",
-    "Accept": "application/json"
-}
-
-RISK_TO_DELTA = {
-    "very_safe": 0.10,
-    "safe": 0.15,
-    "moderate": 0.20,
-    "aggressive": 0.25,
-    "very_aggressive": 0.30
-}
-
-# -----------------------------
-# HELPERS
-# -----------------------------
-def safe_float(x):
-    try:
-        return float(x)
-    except:
-        return None
-
-
-def get_stock_price_tradier(ticker):
-    """Pull stock price directly from Tradier."""
-    try:
-        r = requests.get(TRADIER_QUOTE_URL, headers=HEADERS, params={"symbols": ticker})
-        if r.status_code != 200:
-            return None
-
-        data = r.json()
-        quote = data.get("quotes", {}).get("quote")
-        if not quote:
-            return None
-
-        return safe_float(quote.get("last"))
-    except:
-        return None
-
-
-def get_tradier_expirations(ticker):
-    try:
-        r = requests.get(TRADIER_EXP_URL, headers=HEADERS, params={"symbol": ticker})
-        if r.status_code != 200:
-            return []
-        data = r.json()
-        return data.get("expirations", {}).get("date", [])
-    except:
-        return []
-
-
-def get_tradier_chain(ticker, expiration):
-    try:
-        r = requests.get(TRADIER_CHAIN_URL, headers=HEADERS,
-                         params={"symbol": ticker, "expiration": expiration})
-        if r.status_code != 200:
-            return []
-        data = r.json()
-        return data.get("options", {}).get("option", [])
-    except:
-        return []
-
-
-def black_scholes_iv(price, strike, days, premium):
-    """Simple fallback IV estimate."""
-    try:
-        t = days / 365
-        if t <= 0:
-            return None
-        approx_iv = (premium / price) / math.sqrt(t)
-        return approx_iv
-    except:
-        return None
-
-
-# -----------------------------
-# DEBUG ENDPOINT
-# -----------------------------
-@app.route("/debug")
-def debug():
-    token_present = TRADIER_TOKEN is not None and len(TRADIER_TOKEN.strip()) > 0
-
-    try:
-        r = requests.get(TRADIER_QUOTE_URL, headers=HEADERS, params={"symbols": "AAPL"})
-        status = r.status_code
-        valid_token = (status == 200)
-    except Exception as e:
-        status = f"Error: {e}"
-        valid_token = False
-
-    return {
-        "token_present": token_present,
-        "token_valid": valid_token,
-        "tradier_status_code": status
-    }
-
-
-# -----------------------------
-# MAIN ROUTE
-# -----------------------------
-@app.route("/", methods=["GET", "POST"])
-def index():
-    expirations = []
-    result = None
-    error = None
-
-    if request.method == "POST":
-        action = request.form.get("action")
-        ticker = request.form.get("ticker", "").upper().strip()
-
-        if not ticker:
-            return render_template("index.html", error="Enter a ticker.")
-
-        # -----------------------------
-        # LOAD EXPIRATIONS
-        # -----------------------------
-        if action == "load":
-            raw_exps = get_tradier_expirations(ticker)
-            expirations = [{"date": e, "earnings_week": False} for e in raw_exps]
-
-            return render_template("index.html",
-                                   expirations=expirations,
-                                   error=None)
-
-        # -----------------------------
-        # CALCULATE
-        # -----------------------------
-        expiration = request.form.get("expiration")
-        risk = request.form.get("risk")
-
-        # Repopulate expirations so dropdown stays visible
-        expirations = [{"date": e, "earnings_week": False} for e in get_tradier_expirations(ticker)]
-
-        if not expiration:
-            error = "Select an expiration."
-            return render_template("index.html", expirations=expirations, error=error)
-
-        # Stock price from Tradier
-        price = get_stock_price_tradier(ticker)
-        if price is None:
-            error = "Unable to fetch stock price."
-            return render_template("index.html", expirations=expirations, error=error)
-
-        # Days until expiration
-        try:
-            d = datetime.strptime(expiration, "%Y-%m-%d")
-            days_out = (d - datetime.now()).days
-        except:
-            error = "Invalid expiration date."
-            return render_template("index.html", expirations=expirations, error=error)
-
-        # Target delta
-        target_delta = RISK_TO_DELTA.get(risk, 0.20)
-
-        # Option chain
-        chain = get_tradier_chain(ticker, expiration)
-        if not chain:
-            error = "Unable to pull option data."
-            return render_template("index.html", expirations=expirations, error=error)
-
-        # Find strike closest to target delta
-        best = None
-        best_diff = 999
-
-        for opt in chain:
-            if opt.get("option_type") != "call":
-                continue
-
-            delta = safe_float(opt.get("greeks", {}).get("delta"))
-            if delta is None:
-                continue
-
-            diff = abs(delta - target_delta)
-            if diff < best_diff:
-                best_diff = diff
-                best = opt
-
-        if not best:
-            error = "No valid call options found."
-            return render_template("index.html", expirations=expirations, error=error)
-
-        strike = best.get("strike")
-        premium = safe_float(best.get("bid"))
-
-        # -----------------------------
-        # IV HANDLING (with estimated flag)
-        # -----------------------------
-        iv_raw = safe_float(best.get("greeks", {}).get("iv"))
-        iv_estimated = False
-
-        if iv_raw is None:
-            iv_raw = black_scholes_iv(price, strike, days_out, premium)
-            iv_estimated = True
-
-        if iv_raw is None:
-            iv = "N/A"
-        else:
-            iv = f"{iv_raw:.3f}"
-
-        # Assignment probability (approx)
-        assign_prob = round(best.get("greeks", {}).get("delta", 0) * 100, 1)
-
-        result = {
-            "ticker": ticker,
-            "stock_price": price,
-            "expiration": expiration,
-            "days_out": days_out,
-            "risk_label": risk.replace("_", " ").title(),
-            "strike": strike,
-            "iv": iv,
-            "iv_estimated": iv_estimated,
-            "assign_prob": assign_prob,
-            "premium": premium
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 20px;
+            max-width: 600px;
+            background: #ffffff;
+            color: #000000;
         }
 
-    return render_template("index.html",
-                           expirations=expirations,
-                           result=result,
-                           error=error)
+        label {
+            font-weight: 600;
+        }
 
+        select, input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            margin-bottom: 16px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: #007aff;
+            color: white;
+            border: none;
+            font-size: 17px;
+            cursor: pointer;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background-color: #0063cc;
+        }
+
+        .error {
+            color: #cc0000;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .result-box {
+            margin-top: 22px;
+            padding: 18px;
+            border-radius: 12px;
+            background: #f4f4f4;
+        }
+
+        /* 🌙 DARK MODE */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1c1c1e;
+                color: #f2f2f7;
+            }
+
+            .result-box {
+                background: #2c2c2e;
+                color: #f2f2f7;
+            }
+
+            input, select {
+                background: #3a3a3c;
+                border: 1px solid #555;
+                color: #f2f2f7;
+            }
+
+            button {
+                background: #0a84ff;
+                color: white;
+            }
+
+            label {
+                color: #d1d1d6;
+            }
+
+            .error {
+                color: #ff453a;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<h2>Covered Call Calculator</h2>
+
+<form method="POST">
+
+    <label>Ticker:</label>
+    <input type="text"
+           name="ticker"
+           placeholder="AAPL"
+           value="{{ request.form.ticker }}"
+           required>
+
+    <button name="action" value="load">Load Expirations</button>
+
+    <label>Expiration:</label>
+    <select name="expiration" {% if not expirations %}disabled{% endif %}>
+        {% if expirations %}
+            {% for e in expirations %}
+                <option value="{{ e.date }}">{{ e.date }}</option>
+            {% endfor %}
+        {% else %}
+            <option>Load expirations first...</option>
+        {% endif %}
+    </select>
+
+    <label>Risk Level:</label>
+    <select name="risk">
+        <option value="very_safe">Very Safe (Δ ≈ 0.10)</option>
+        <option value="safe">Safe (Δ ≈ 0.15)</option>
+        <option value="moderate" selected>Moderate (Δ ≈ 0.20)</option>
+        <option value="aggressive">Aggressive (Δ ≈ 0.25)</option>
+        <option value="very_aggressive">Very Aggressive (Δ ≈ 0.30)</option>
+    </select>
+
+    <button name="action" value="calculate">Calculate</button>
+
+</form>
+
+{% if error %}
+    <p class="error">{{ error }}</p>
+{% endif %}
+
+{% if result %}
+<div class="result-box">
+    <h3>Results for {{ result.ticker }}</h3>
+
+    <p><strong>Stock Price:</strong> ${{ result.stock_price }}</p>
+    <p><strong>Expiration:</strong> {{ result.expiration }} ({{ result.days_out }} days)</p>
+    <p><strong>Risk Level:</strong> {{ result.risk_label }}</p>
+    <p><strong>Strike:</strong> {{ result.strike }}</p>
+
+    <p>
+        <strong>IV:</strong> {{ result.iv }}
+        {% if result.iv_estimated %}
+            <span style="color:#cc0000; font-size:0.9em;">(estimated)</span>
+        {% endif %}
+    </p>
+
+    <p><strong>Assignment Probability:</strong> {{ result.assign_prob }}%</p>
+    <p><strong>Premium (Bid):</strong> ${{ result.premium }}</p>
+</div>
+{% endif %}
+
+</body>
+</html>
