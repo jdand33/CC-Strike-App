@@ -133,17 +133,29 @@ def index():
             # Filter calls only
             calls = [c for c in chain if c.get("option_type") == "call"]
 
+            # Remove calls with missing greeks or missing delta
+            calls = [
+                c for c in calls
+                if c.get("greeks") and c["greeks"].get("delta") is not None
+            ]
+
+            if not calls:
+                error = "No valid call options found for this expiration."
+                return render_template("index.html",
+                                       expirations=expirations,
+                                       error=error)
+
             # Pick strike closest to delta target
             target_delta = DELTA_TARGETS.get(risk, 0.20)
 
             best = min(
                 calls,
-                key=lambda c: abs((c.get("greeks", {}) or {}).get("delta", 0) - target_delta)
+                key=lambda c: abs(c["greeks"]["delta"] - target_delta)
             )
 
             strike = best.get("strike")
-            delta = best.get("greeks", {}).get("delta")
-            iv = best.get("greeks", {}).get("mid_iv")
+            delta = best["greeks"]["delta"]
+            iv = best["greeks"].get("mid_iv")
             premium = best.get("bid")
             oi = best.get("open_interest")
 
@@ -152,14 +164,15 @@ def index():
 
             # Days out
             from datetime import datetime
+            exp_clean = expiration.split(":")[0]  # remove :28 if present
             d0 = datetime.now()
-            d1 = datetime.strptime(expiration, "%Y-%m-%d")
+            d1 = datetime.strptime(exp_clean, "%Y-%m-%d")
             days_out = (d1 - d0).days
 
             result = {
                 "ticker": ticker,
                 "stock_price": round(stock_price, 2),
-                "expiration": expiration,
+                "expiration": exp_clean,
                 "days_out": days_out,
                 "risk_label": risk.replace("_", " ").title(),
                 "strike": strike,
